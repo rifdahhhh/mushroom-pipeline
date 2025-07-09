@@ -11,3 +11,13 @@ Username dicoding: rifdahhr
 | **Arsitektur Model** | Model dibangun menggunakan **TensorFlow Keras Sequential API**:  <br>```model = tf.keras.Sequential([    tf.keras.layers.Dense(units_1, activation='relu'),    tf.keras.layers.Dense(units_2, activation='relu'),    tf.keras.layers.Dense(1, activation='sigmoid')])``` <br>**Loss Function:** `binary_crossentropy` <br>**Optimizer:** `adam` (dengan `learning_rate` hasil tuning) <br>**Metrics:** `binary_accuracy` <br>Model diekspor dengan format `SavedModel`
 | **Metrik Evaluasi** | **binary_accuracy**: Akurasi model dalam membedakan kelas 0 & 1  <br>**loss**: Indikator kesalahan prediksi |
 | **Performa Model** | Model mencapai **akurasi validasi hingga 99.88%**. <br>Contoh hasil prediksi: <br>```response: {"predictions": [[0.998838544]]} Predicted Label: 1 (Poisonous) Probability: 99.88%``` |
+
+
+```bash
+docker build -t mushrooms-tf-serving:v2 .
+```
+
+kemudian jalankan docker image tsb
+```bash
+docker run -p 8080:8501 mushrooms-tf-serving:v2
+```

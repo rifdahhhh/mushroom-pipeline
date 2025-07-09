@@ -31,27 +31,35 @@ def input_fn(file_pattern, tf_transform_output, num_epochs=10, batch_size=64):
         shuffle=True)
     return dataset
 
-def model_builder():
+def model_builder(hp=None):
     inputs = {}
     encoded_inputs = []
 
-    # Buat input dan embedding untuk semua fitur kategorikal
     for key in CATEGORICAL_FEATURE_KEYS:
         feat_key = transformed_name(key)
         inputs[feat_key] = tf.keras.Input(shape=(1,), name=feat_key, dtype=tf.int64)
-        vocab_size = 20  # asumsi maksimum kategori per fitur
-        embed = tf.keras.layers.Embedding(vocab_size, 4)(inputs[feat_key])
+        embed = tf.keras.layers.Embedding(20, 4)(inputs[feat_key])
         flat = tf.keras.layers.Flatten()(embed)
         encoded_inputs.append(flat)
 
     x = tf.keras.layers.concatenate(encoded_inputs)
-    x = tf.keras.layers.Dense(64, activation='relu')(x)
-    x = tf.keras.layers.Dense(32, activation='relu')(x)
+    
+    if hp:
+        units_1 = hp.Int("units_1", 32, 128, step=16)
+        units_2 = hp.Int("units_2", 16, 128, step=16)
+        learning_rate = hp.Choice("learning_rate", [0.001, 0.01, 0.1])
+    else:
+        units_1 = 64
+        units_2 = 32
+        learning_rate = 0.001
+
+    x = tf.keras.layers.Dense(units_1, activation='relu')(x)
+    x = tf.keras.layers.Dense(units_2, activation='relu')(x)
     outputs = tf.keras.layers.Dense(1, activation='sigmoid')(x)
 
     model = tf.keras.Model(inputs=inputs, outputs=outputs)
     model.compile(
-        optimizer='adam',
+        optimizer=tf.keras.optimizers.Adam(learning_rate),
         loss='binary_crossentropy',
         metrics=[tf.keras.metrics.BinaryAccuracy()]
     )
@@ -75,11 +83,16 @@ def run_fn(fn_args: FnArgs):
     train_dataset = input_fn(fn_args.train_files, tf_transform_output)
     eval_dataset = input_fn(fn_args.eval_files, tf_transform_output)
 
-    model = model_builder()
+    if fn_args.hyperparameters:
+        from kerastuner import HyperParameters
+        hparams = HyperParameters.from_config(fn_args.hyperparameters)
+        model = model_builder(hp=hparams)
+    else:
+        model = model_builder()
 
     tensorboard_callback = tf.keras.callbacks.TensorBoard(
         log_dir=os.path.join(os.path.dirname(fn_args.serving_model_dir), 'logs'))
-    
+
     model.fit(
         train_dataset,
         validation_data=eval_dataset,
@@ -88,6 +101,14 @@ def run_fn(fn_args: FnArgs):
         epochs=5,
         callbacks=[tensorboard_callback]
     )
+
+    signatures = {
+        'serving_default': _get_serve_tf_examples_fn(model, tf_transform_output).get_concrete_function(
+            tf.TensorSpec(shape=[None], dtype=tf.string, name='examples'))
+    }
+
+    model.save(fn_args.serving_model_dir, save_format='tf', signatures=signatures)
+
 
     signatures = {
         'serving_default': _get_serve_tf_examples_fn(model, tf_transform_output).get_concrete_function(
